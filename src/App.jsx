@@ -161,10 +161,65 @@ function AppointmentBadge({ dateStr }) {
   return null;
 }
 
+// --- Week grouping helpers ---
+function getWeekStart(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getDay(); // 0=Sun
+  const diff = d.getDate() - day;
+  const start = new Date(d);
+  start.setDate(diff);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function getWeekLabel(dateStr) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayWeekStart = getWeekStart(toDateStr(today));
+  const aptWeekStart = getWeekStart(dateStr);
+  const diffWeeks = Math.round((aptWeekStart - todayWeekStart) / (7 * 24 * 60 * 60 * 1000));
+  if (diffWeeks === 0) return "השבוע";
+  if (diffWeeks === 1) return "שבוע הבא";
+  if (diffWeeks === -1) return "שבוע שעבר";
+  if (diffWeeks > 1) {
+    const startDay = aptWeekStart.getDate();
+    const endDate = new Date(aptWeekStart); endDate.setDate(endDate.getDate() + 6);
+    return `${startDay}-${endDate.getDate()} ${HEBREW_MONTHS[aptWeekStart.getMonth()]}`;
+  }
+  // past
+  const startDay = aptWeekStart.getDate();
+  const endDate = new Date(aptWeekStart); endDate.setDate(endDate.getDate() + 6);
+  return `${startDay}-${endDate.getDate()} ${HEBREW_MONTHS[aptWeekStart.getMonth()]}`;
+}
+
+function getWeekKey(dateStr) {
+  const ws = getWeekStart(dateStr);
+  return toDateStr(ws);
+}
+
+function groupByWeek(appointments) {
+  const groups = {};
+  appointments.forEach(apt => {
+    const key = getWeekKey(apt.date);
+    if (!groups[key]) groups[key] = { key, label: getWeekLabel(apt.date), items: [] };
+    groups[key].items.push(apt);
+  });
+  return Object.values(groups).sort((a, b) => a.key.localeCompare(b.key));
+}
+
 // --- Card ---
-function AppointmentCard({ apt, onDelete }) {
+function AppointmentCard({ apt, onDelete, onEdit }) {
   const upcoming = isUpcoming(apt.date);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const actionBtn = (label, onClick, hoverColor, hoverBg) => (
+    <button onClick={onClick} style={{
+      background: "transparent", border: "none", color: theme.textMuted, fontSize: 13,
+      cursor: "pointer", padding: "6px 10px", borderRadius: 8,
+    }}
+      onMouseEnter={e => { e.target.style.color = hoverColor; e.target.style.background = hoverBg; }}
+      onMouseLeave={e => { e.target.style.color = theme.textMuted; e.target.style.background = "transparent"; }}
+    >{label}</button>
+  );
 
   return (
     <div style={{
@@ -189,15 +244,12 @@ function AppointmentCard({ apt, onDelete }) {
 
       {!upcoming && <div style={{ marginTop: 8, fontSize: 13, color: theme.textMuted, fontStyle: "italic" }}>✓ התור עבר</div>}
 
-      <div style={{ marginTop: 12 }}>
+      <div style={{ marginTop: 12, display: "flex", gap: 4 }}>
         {!confirmDelete ? (
-          <button onClick={() => setConfirmDelete(true)} style={{
-            background: "transparent", border: "none", color: theme.textMuted, fontSize: 13,
-            cursor: "pointer", padding: "6px 10px", borderRadius: 8,
-          }}
-            onMouseEnter={e => { e.target.style.color = theme.danger; e.target.style.background = theme.dangerLight; }}
-            onMouseLeave={e => { e.target.style.color = theme.textMuted; e.target.style.background = "transparent"; }}
-          >🗑️ מחיקה</button>
+          <>
+            {upcoming && !apt.parentId && actionBtn("✏️ עריכה", () => onEdit(apt), theme.primary, theme.primaryLight)}
+            {actionBtn("🗑️ מחיקה", () => setConfirmDelete(true), theme.danger, theme.dangerLight)}
+          </>
         ) : (
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 13, color: theme.danger }}>{apt.recurring && !apt.parentId ? "למחוק את כל הסדרה?" : "למחוק?"}</span>
@@ -457,15 +509,15 @@ function RecurringOptions({ recurring, setRecurring, recurringWeeks, setRecurrin
   );
 }
 
-// --- Add Form Wizard ---
-function AddForm({ onAdd, onCancel }) {
-  const [reason, setReason] = useState("");
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
-  const [location, setLocation] = useState("");
-  const [recurring, setRecurring] = useState(false);
-  const [recurringWeeks, setRecurringWeeks] = useState(2);
-  const [recurringCount, setRecurringCount] = useState(12);
+// --- Add/Edit Form Wizard ---
+function AddForm({ onAdd, onCancel, editingApt }) {
+  const [reason, setReason] = useState(editingApt ? editingApt.reason : "");
+  const [date, setDate] = useState(editingApt ? editingApt.date : "");
+  const [time, setTime] = useState(editingApt ? editingApt.time : "");
+  const [location, setLocation] = useState(editingApt ? editingApt.location : "");
+  const [recurring, setRecurring] = useState(editingApt ? !!editingApt.recurring : false);
+  const [recurringWeeks, setRecurringWeeks] = useState(editingApt?.recurringWeeks || 2);
+  const [recurringCount, setRecurringCount] = useState(editingApt?.recurringCount || 12);
   const [step, setStep] = useState(0);
 
   const inputStyle = {
@@ -486,9 +538,11 @@ function AddForm({ onAdd, onCancel }) {
 
   const stepNames = ["למה?", "תאריך", "שעה", "מיקום", "חזרה?", "סיכום"];
 
+  const isEditing = !!editingApt;
+
   const handleSubmit = () => {
     onAdd({
-      id: Date.now().toString(),
+      id: isEditing ? editingApt.id : Date.now().toString(),
       reason: reason.trim(), date, time, location: location.trim(),
       recurring, recurringWeeks: recurring ? recurringWeeks : null,
       recurringCount: recurring ? recurringCount : null,
@@ -497,7 +551,7 @@ function AddForm({ onAdd, onCancel }) {
 
   return (
     <div style={{ background: theme.card, borderRadius: 20, padding: "28px 24px", boxShadow: theme.shadowHover, border: `2px solid ${theme.accent}`, marginBottom: 20 }}>
-      <h2 style={{ fontSize: 20, fontWeight: 800, color: theme.primaryDark, marginBottom: 18, textAlign: "center" }}>➕ תור חדש</h2>
+      <h2 style={{ fontSize: 20, fontWeight: 800, color: theme.primaryDark, marginBottom: 18, textAlign: "center" }}>{isEditing ? "✏️ עריכת תור" : "➕ תור חדש"}</h2>
 
       <div style={{ display: "flex", justifyContent: "center", gap: 4, marginBottom: 18, flexWrap: "wrap" }}>
         {stepNames.map((name, i) => (
@@ -587,7 +641,7 @@ function AddForm({ onAdd, onCancel }) {
             width: "100%", padding: "16px", fontSize: 20, fontWeight: 800,
             background: theme.primary, color: "#fff", border: "none", borderRadius: 14,
             cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 16px rgba(43,122,120,0.3)",
-          }}>✅ שמור תור</button>
+          }}>{isEditing ? "✅ עדכן תור" : "✅ שמור תור"}</button>
           <button onClick={() => setStep(4)} style={backBtnStyle}>→ חזרה</button>
         </div>
       )}
@@ -604,6 +658,7 @@ export default function MedicalAppointments() {
   const [appointments, setAppointments] = useState([]);
   const [dismissedAlerts, setDismissedAlerts] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingApt, setEditingApt] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [showPast, setShowPast] = useState(false);
 
@@ -620,7 +675,24 @@ export default function MedicalAppointments() {
     saveData({ appointments: apts, dismissedAlerts: dismissed });
   }, []);
 
-  const handleAdd = (apt) => { save([...appointments, apt], dismissedAlerts); setShowForm(false); };
+  const handleAdd = (apt) => {
+    if (editingApt) {
+      save(appointments.map(a => a.id === apt.id ? apt : a), dismissedAlerts);
+    } else {
+      save([...appointments, apt], dismissedAlerts);
+    }
+    setShowForm(false);
+    setEditingApt(null);
+  };
+
+  const handleEdit = (apt) => {
+    // Find the source appointment (not a recurring instance)
+    const sourceApt = apt.parentId ? appointments.find(a => a.id === apt.parentId) : apt;
+    if (sourceApt) {
+      setEditingApt(sourceApt);
+      setShowForm(true);
+    }
+  };
 
   const handleDelete = (id) => {
     // Check if it's a recurring instance (contains _r)
@@ -685,14 +757,29 @@ export default function MedicalAppointments() {
           >➕ הוסף תור חדש</button>
         )}
 
-        {showForm && <AddForm onAdd={handleAdd} onCancel={() => setShowForm(false)} />}
+        {showForm && <AddForm onAdd={handleAdd} onCancel={() => { setShowForm(false); setEditingApt(null); }} editingApt={editingApt} />}
 
         {upcoming.length > 0 && (
           <>
             <div style={{ fontSize: 16, fontWeight: 700, color: theme.primary, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
               <span>📋</span><span>תורים קרובים ({upcoming.length})</span>
             </div>
-            {upcoming.map(apt => <AppointmentCard key={apt.id} apt={apt} onDelete={handleDelete} />)}
+            {groupByWeek(upcoming).map(week => (
+              <div key={week.key} style={{ marginBottom: 20 }}>
+                <div style={{
+                  fontSize: 14, fontWeight: 700, color: theme.primaryDark,
+                  padding: "8px 14px", marginBottom: 10,
+                  background: week.label === "השבוע" ? theme.primaryLight : "#EDF2F4",
+                  borderRadius: 10, display: "flex", alignItems: "center", gap: 8,
+                  borderRight: `4px solid ${week.label === "השבוע" ? theme.accent : theme.border}`,
+                }}>
+                  <span>{week.label === "השבוע" ? "📌" : "📅"}</span>
+                  <span>{week.label}</span>
+                  <span style={{ fontSize: 12, color: theme.textMuted, fontWeight: 500 }}>({week.items.length})</span>
+                </div>
+                {week.items.map(apt => <AppointmentCard key={apt.id} apt={apt} onDelete={handleDelete} onEdit={handleEdit} />)}
+              </div>
+            ))}
           </>
         )}
 
@@ -714,7 +801,23 @@ export default function MedicalAppointments() {
             }}>
               {showPast ? "▲ הסתר" : "▼ הצג"} תורים שעברו ({past.length})
             </button>
-            {showPast && <div style={{ marginTop: 12 }}>{past.map(apt => <AppointmentCard key={apt.id} apt={apt} onDelete={handleDelete} />)}</div>}
+            {showPast && (
+              <div style={{ marginTop: 12 }}>
+                {groupByWeek(past.slice().sort((a, b) => a.date.localeCompare(b.date))).reverse().map(week => (
+                  <div key={week.key} style={{ marginBottom: 16 }}>
+                    <div style={{
+                      fontSize: 13, fontWeight: 600, color: theme.textMuted,
+                      padding: "6px 12px", marginBottom: 8,
+                      background: "#F0F2F4", borderRadius: 8,
+                      borderRight: `3px solid ${theme.border}`,
+                    }}>
+                      📅 {week.label} ({week.items.length})
+                    </div>
+                    {week.items.map(apt => <AppointmentCard key={apt.id} apt={apt} onDelete={handleDelete} onEdit={handleEdit} />)}
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
