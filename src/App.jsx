@@ -230,7 +230,7 @@ function AppointmentCard({ apt, onDelete, onEdit }) {
       opacity: upcoming ? 1 : 0.65,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-        <span style={{ fontSize: 22, filter: upcoming ? "none" : "grayscale(0.5)" }}>🏥</span>
+        <span style={{ fontSize: 22, filter: upcoming ? "none" : "grayscale(0.5)" }}>{apt.emoji || "🏥"}</span>
         <span style={{ fontSize: 17, fontWeight: 700, color: upcoming ? theme.primaryDark : theme.textMuted }}>{apt.reason}</span>
         <AppointmentBadge dateStr={apt.date} />
         {apt.recurring && <span style={{ background: "#E8F0FE", color: "#1A73E8", padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>🔄 חוזר</span>}
@@ -512,6 +512,7 @@ function RecurringOptions({ recurring, setRecurring, recurringWeeks, setRecurrin
 // --- Add/Edit Form Wizard ---
 function AddForm({ onAdd, onCancel, editingApt }) {
   const [reason, setReason] = useState(editingApt ? editingApt.reason : "");
+  const [emoji, setEmoji] = useState(editingApt?.emoji || "🏥");
   const [date, setDate] = useState(editingApt ? editingApt.date : "");
   const [time, setTime] = useState(editingApt ? editingApt.time : "");
   const [location, setLocation] = useState(editingApt ? editingApt.location : "");
@@ -519,6 +520,8 @@ function AddForm({ onAdd, onCancel, editingApt }) {
   const [recurringWeeks, setRecurringWeeks] = useState(editingApt?.recurringWeeks || 2);
   const [recurringCount, setRecurringCount] = useState(editingApt?.recurringCount || 12);
   const [step, setStep] = useState(0);
+
+  const emojiOptions = ["🏥", "🩺", "💊", "💉", "🦷", "👁️", "❤️", "🦴", "🧪", "👶", "🧠", "🏃", "💅", "💇", "🐾", "📋"];
 
   const inputStyle = {
     width: "100%", padding: "14px 16px", fontSize: 17,
@@ -543,7 +546,7 @@ function AddForm({ onAdd, onCancel, editingApt }) {
   const handleSubmit = () => {
     onAdd({
       id: isEditing ? editingApt.id : Date.now().toString(),
-      reason: reason.trim(), date, time, location: location.trim(),
+      reason: reason.trim(), emoji, date, time, location: location.trim(),
       recurring, recurringWeeks: recurring ? recurringWeeks : null,
       recurringCount: recurring ? recurringCount : null,
     });
@@ -571,9 +574,24 @@ function AddForm({ onAdd, onCancel, editingApt }) {
       {step === 0 && (
         <div>
           <label style={labelStyle}>למה התור?</label>
-          <input type="text" placeholder='למשל: כימותרפיה / ד"ר כהן - קרדיולוג' value={reason} onChange={e => setReason(e.target.value)} style={inputStyle} autoFocus
+          <input type="text" placeholder='למשל: כימותרפיה / ד"ר כהן - קרדיולוג / לק ג׳ל' value={reason} onChange={e => setReason(e.target.value)} style={inputStyle} autoFocus
             onFocus={e => e.target.style.borderColor = theme.accent} onBlur={e => e.target.style.borderColor = theme.border}
             onKeyDown={e => { if (e.key === "Enter" && reason.trim()) setStep(1); }} />
+          <div style={{ marginTop: 14 }}>
+            <label style={{ ...labelStyle, fontSize: 14 }}>בחרו אייקון:</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {emojiOptions.map(e => (
+                <button key={e} onClick={() => setEmoji(e)} style={{
+                  width: 44, height: 44, fontSize: 22, borderRadius: 12,
+                  border: emoji === e ? `2.5px solid ${theme.accent}` : `2px solid ${theme.border}`,
+                  background: emoji === e ? theme.primaryLight : "#FAFCFC",
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: emoji === e ? "0 2px 8px rgba(58,175,169,0.3)" : "none",
+                  transition: "all 0.15s",
+                }}>{e}</button>
+              ))}
+            </div>
+          </div>
           <button onClick={() => setStep(1)} disabled={!reason.trim()} style={nextBtnStyle(!reason.trim())}>הבא ←</button>
         </div>
       )}
@@ -623,7 +641,7 @@ function AddForm({ onAdd, onCancel, editingApt }) {
           <div style={{ background: theme.primaryLight, borderRadius: 14, padding: "18px 20px", marginBottom: 16 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: theme.primary, marginBottom: 12 }}>סיכום התור:</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span>🏥</span><span style={{ fontSize: 16, fontWeight: 700, color: theme.primaryDark }}>{reason}</span></div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span>{emoji}</span><span style={{ fontSize: 16, fontWeight: 700, color: theme.primaryDark }}>{reason}</span></div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span>📅</span><span style={{ fontSize: 15, color: theme.text }}>{formatDate(date)}</span></div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span>🕐</span><span style={{ fontSize: 15, color: theme.text }}>{time}</span></div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span>📍</span><span style={{ fontSize: 15, color: theme.text }}>{location}</span></div>
